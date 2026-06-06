@@ -1,5 +1,8 @@
 import time
 
+# Set True to log snap-to-end events (for debugging trajectory issues).
+_DBG_SNAP = True
+
 # Bottango normalises all curve Y values to this range (0 = min, 8192 = max)
 BOTTANGO_MAX_SIGNAL = 8192
 
@@ -106,6 +109,10 @@ class AbstractEffector:
         # No active curve → snap to the end position of the most recently finished one
         if not found_active and last_curve is not None and last_end_time < current_time_ms:
             end_target = self._lerp_signal(last_curve.end_val)
+            if _DBG_SNAP and self.target_signal != end_target:
+                from bottango_driver.outgoing import Outgoing
+                Outgoing.send_log("SNAP id={} cur={} lc_end={} tgt->{}".format(
+                    self.identifier, current_time_ms, last_end_time, end_target))
             if self.target_signal != end_target:
                 now_us  = time.ticks_us()
                 limited = self._speed_limit(end_target, now_us)
