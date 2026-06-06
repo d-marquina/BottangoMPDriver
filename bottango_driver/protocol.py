@@ -78,10 +78,16 @@ class ProtocolHandler:
     # --- stop / clear ---
 
     def handle_stop_all(self, params):
-        # STOP → clear curves only (does NOT deregister effectors)
-        # mirrors Arduino BasicCommands::clearAllCurves
-        self.core.effector_pool.clear_all_curves()
-        return True
+        # STOP → mirrors Arduino: deregister all effectors then reboot.
+        # Arduino calls uninitialize() (deregisterAll) + NVIC_SystemReset().
+        # Bottango closes the COM port immediately after sending STOP and does
+        # not wait for OK, so the response may never be received — but we send
+        # it anyway as a best-effort courtesy, then reset.
+        self.core.effector_pool.clear_all()
+        Outgoing.send_ready()   # best-effort OK before reset
+        import machine
+        machine.reset()
+        return False  # never reached; prevents a second OK if reset is mocked
 
     def handle_clear_all(self, params):
         # xE → deregister ALL effectors and disconnect

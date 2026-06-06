@@ -75,7 +75,7 @@ class BottangoCore:
             current_time_ms = self.time_sync.get_current_time_ms()
             self.effector_pool.update_all(current_time_ms)
 
-            if self.is_registered:
+            if self.is_registered and self.timeout_ms > 0:
                 now_ms = self.time_sync.get_local_ticks_ms()
                 if time.ticks_diff(now_ms, self.last_comm_time_ms) > self.timeout_ms:
                     self.effector_pool.clear_all()

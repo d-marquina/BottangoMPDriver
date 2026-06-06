@@ -2,8 +2,14 @@
 I2C PWM driver pool.
 
 Multiple servo effectors on the same physical board share one I2CPWMDriver
-instance.  A driver is created on first use and torn down (all channels set
-to 0) when the last servo that references it is deregistered.
+instance.  A driver is created on first use and freed (reference dropped)
+when the last servo that references it is deregistered.
+
+Note: we deliberately do NOT call set_all_off() on release — mirroring the
+Arduino driver, which simply deletes the Adafruit_PWMServoDriver object
+without zeroing channels.  Calling set_all_off() requires 64 consecutive
+I2C transactions that can leave the bus in an inconsistent state, causing
+the next re-initialisation (on reconnect) to fail silently.
 
 Usage
 -----
@@ -14,7 +20,7 @@ Usage
     driver = pool.acquire(address=0x40)      # ref-count +1
     driver.write_microseconds(channel=0, us=1500)
 
-    pool.release(address=0x40)               # ref-count -1; destroys when 0
+    pool.release(address=0x40)               # ref-count -1; frees when 0
 """
 
 from machine import I2C, Pin
@@ -49,10 +55,9 @@ class I2CPool:
         entry = self._drivers[address]
         entry["count"] -= 1
         if entry["count"] <= 0:
-            try:
-                entry["driver"].set_all_off()
-            except Exception:
-                pass
+            # Drop the reference — mirrors Arduino's `delete driver`.
+            # No set_all_off(): avoids 64 I2C transactions that can corrupt
+            # the bus and break the subsequent reconnect initialisation.
             del self._drivers[address]
 
     def get(self, address):

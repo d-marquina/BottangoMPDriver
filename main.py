@@ -9,7 +9,7 @@ class Config:
     # Communication
     BAUD_RATE = 115200
     COMMAND_BUFF_LEN = 512   # Serial read buffer size (bytes)
-    TIMEOUT_THRESH_MS = 2000 # Time before deregistering due to inactivity
+    TIMEOUT_THRESH_MS = 0     # Inactivity timeout (ms). 0 = disabled (recommended).
 
     # Capacity
     MAX_NUM_EFFECTORS = 16
