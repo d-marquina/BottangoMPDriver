@@ -1,7 +1,7 @@
 import time
 
 # Set True to log snap-to-end events (for debugging trajectory issues).
-_DBG_SNAP = True
+_DBG_SNAP = False
 
 # Bottango normalises all curve Y values to this range (0 = min, 8192 = max)
 BOTTANGO_MAX_SIGNAL = 8192

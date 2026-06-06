@@ -5,7 +5,7 @@ from bottango_driver.callbacks import on_bottango_connected
 
 # Set True to log tSYN and sC timing to Bottango's console (for debugging).
 # Set False for production.
-_DBG_TIMING = True
+_DBG_TIMING = False
 
 class ProtocolHandler:
     def __init__(self, core):
@@ -27,6 +27,7 @@ class ProtocolHandler:
             'xC':     self.handle_clear_curves,
             'xUC':    self.handle_clear_effector_curves,
             'sC':     self.handle_set_curve,
+            'sSY':    self.handle_set_sync_curves,
             'sycM':   self.handle_stepper_sync,
         }
 
@@ -208,6 +209,28 @@ class ProtocolHandler:
         return True
 
     # --- curves ---
+
+    def handle_set_sync_curves(self, params):
+        # sSY,sC,<id>,<off>,<dur>,<sY>,<cp1x>,<cp1y>,<eY>,<cp2x>,<cp2y>;...;[,hHASH]
+        #
+        # Bottango batches the FIRST curve of every effector into a single sSY
+        # command (sync-send) so they all start at the same animation timestamp.
+        # Each entry has the same 9 fields as a plain sC, separated by ';'.
+        # We split on ';', reconstruct each entry's params and delegate to
+        # handle_set_curve, which already knows how to register a single curve.
+        if not params or params[0] != 'sC':
+            return True
+
+        # Rejoin with ',' (undo the original split), then split on ';' to get
+        # individual curve entries.  The last segment after the final ';' will
+        # be empty or contain only the hash — both are safely ignored.
+        batch = ','.join(params[1:])
+        for entry in batch.split(';'):
+            # Keep only non-empty, non-hash fields.
+            parts = [p for p in entry.split(',') if p and not p.startswith('h')]
+            if len(parts) >= 9:
+                self.handle_set_curve(parts)
+        return True
 
     def handle_set_curve(self, params):
         # sC,identifier,startTime,duration,startY,cp1x,cp1y,endY,cp2x,cp2y[,hHASH]
