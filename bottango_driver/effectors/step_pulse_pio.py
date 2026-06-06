@@ -72,11 +72,16 @@ _MIN_HALF_PERIOD_SEED = 3   # → 5 µs high, 5 µs low
 
 # Statically allocate SM indices (one per stepper registered on this board).
 # RP2040 has 8 SMs (PIO0: 0-3, PIO1: 4-7); RP2350 has 12 (PIO2: 8-11).
+#
+# IMPORTANT: MicroPython's built-in neopixel/WS2812 driver uses SM 0 (hardcoded).
+# We therefore start allocation from SM 1 to avoid silently sharing the SM —
+# a conflict causes sm.put() to block indefinitely, freezing the main loop.
 _USED_SM_IDS: set = set()
+_SM_FIRST = 1   # skip SM 0 (reserved for NeoPixel / WS2812)
 
 
 def _alloc_sm_id() -> int:
-    for sid in range(12):
+    for sid in range(_SM_FIRST, 12):
         if sid not in _USED_SM_IDS:
             _USED_SM_IDS.add(sid)
             return sid
@@ -113,19 +118,24 @@ class StepPulsePIO:
     def push_burst(self, step_count: int, half_period_us: int):
         """
         Queue N step pulses at the given half-period (µs each side).
-        Non-blocking: returns immediately; PIO executes in background.
+        Truly non-blocking: checks FIFO space before writing.
+        Returns False (and skips the burst) if the FIFO is unexpectedly full.
 
         step_count    : number of steps (must be ≥ 1)
         half_period_us: µs for each half of the STEP pulse (min 5)
         """
         if step_count < 1:
-            return
+            return True
+        # TX FIFO depth = 4 words.  Each burst uses 2 words.
+        # If more than 2 words are already queued, the previous burst is still
+        # running or the SM stalled.  Skip this burst rather than blocking.
+        if self._sm.tx_fifo() > 2:
+            return False
         seed_y = step_count - 1
         seed_x = max(_MIN_HALF_PERIOD_SEED, half_period_us - 2)
-        # put() blocks if FIFO is full (4 entries); that won't happen in normal
-        # operation because we push at most 2 words every 67 ms.
         self._sm.put(seed_y)
         self._sm.put(seed_x)
+        return True
 
     def is_idle(self) -> bool:
         """True when the SM has consumed both FIFO words and is stalling at pull."""

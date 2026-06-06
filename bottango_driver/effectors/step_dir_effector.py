@@ -91,6 +91,7 @@ class StepDirEffector(AbstractEffector):
         super().__init__(identifier, max_ccw_steps, max_cw_steps,
                          starting_offset, max_steps_per_sec)
 
+        self._start_offset  = starting_offset    # saved for set_home() reset
         self.current_signal = starting_offset
         self.target_signal  = starting_offset
 
@@ -99,8 +100,12 @@ class StepDirEffector(AbstractEffector):
         self._curr_dir_cw     = True
         self._dir_pin.value(0 if clockwise_is_low else 1)
 
-        # Homing state
-        self.homed = False
+        # Homing state.
+        # Start as homed so Bottango can run animations immediately after
+        # registration without waiting for a manual sycM,home command.
+        # The motor is assumed to be at starting_offset (the position
+        # Bottango configured at registration time).
+        self.homed = True
 
         # Manual sync (steps remaining, + = CW, - = CCW)
         self._sync = 0
@@ -160,8 +165,21 @@ class StepDirEffector(AbstractEffector):
     # ------------------------------------------------------------------
 
     def set_home(self):
-        """Mark current position as home. Curves can now execute."""
-        self.homed = True
+        """
+        Mark the current physical position as home and reset the step counter.
+
+        After this call:
+          - homed = True  (curves will execute)
+          - current_signal = target_signal = _start_offset
+
+        This means Bottango's animation curves (which reference step counts
+        relative to starting_offset) will treat wherever the motor physically
+        is RIGHT NOW as the origin.  Any previous sync movements are absorbed
+        into the physical calibration and forgotten by the software counter.
+        """
+        self.homed          = True
+        self.current_signal = self._start_offset
+        self.target_signal  = self._start_offset
 
     def reset_home(self):
         """Clear home flag. Curves pause until re-homed."""
@@ -199,8 +217,6 @@ class StepDirEffector(AbstractEffector):
             elapsed = time.ticks_diff(current_time_ms, self._segment_start_ms)
             if elapsed < VELOCITY_SEGMENT_MS:
                 return
-
-        now_us = time.ticks_us()
 
         # ── Manual sync ─────────────────────────────────────────────────
         if self._sync != 0:
@@ -262,6 +278,11 @@ class StepDirEffector(AbstractEffector):
                 last_curve = curve
 
         # ── No active curve → snap to end of last finished ─────────────
+        # Rate-limit this block to once per segment even when no burst is
+        # issued, so we don't burn the main loop evaluating an empty curve
+        # buffer every iteration.
+        self._segment_start_ms = current_time_ms
+
         if last_curve is not None:
             lc_end = last_curve.start_time + last_curve.duration
             if lc_end < current_time_ms:
