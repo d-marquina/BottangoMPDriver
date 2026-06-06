@@ -17,7 +17,7 @@ class Config:
     # Enabled modules — set unused ones to False to save memory
     ENABLE_PIN_SERVOS        = True
     ENABLE_PIN_STEPPERS      = False
-    ENABLE_STEP_DIR_STEPPERS = False
+    ENABLE_STEP_DIR_STEPPERS = True
     ENABLE_CUSTOM_MOTORS     = False
     ENABLE_I2C_SERVOS        = True
     ENABLE_COLOR             = False

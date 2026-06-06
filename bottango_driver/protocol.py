@@ -18,10 +18,12 @@ class ProtocolHandler:
             'xE':     self.handle_clear_all,
             'rSVPin': self.handle_register_pin_servo,
             'rSVI2C': self.handle_register_i2c_servo,
+            'rSTDir': self.handle_register_step_dir,
             'xUE':    self.handle_deregister,
             'xC':     self.handle_clear_curves,
             'xUC':    self.handle_clear_effector_curves,
             'sC':     self.handle_set_curve,
+            'sycM':   self.handle_stepper_sync,
         }
 
     def process_command(self, line):
@@ -144,6 +146,55 @@ class ProtocolHandler:
         effector = I2CServoEffector(self.core.i2c_pool, i2c_address, channel,
                                     min_pwm, max_pwm, max_speed, start_val)
         self.core.effector_pool.register_effector(effector, "I2C_SERVO")
+        return True
+
+    def handle_register_step_dir(self, params):
+        # rSTDir,stepPin,dirPin,clockwiseIsLow,maxCCWSteps,maxCWSteps,maxStepsPerSec,startingOffset[,hHASH]
+        if not getattr(self.config, 'ENABLE_STEP_DIR_STEPPERS', False):
+            return True
+        if len(params) < 7:
+            return True
+        step_pin    = int(params[0])
+        dir_pin     = int(params[1])
+        cw_is_low   = int(params[2]) != 0
+        max_ccw     = int(params[3])
+        max_cw      = int(params[4])
+        max_speed   = int(params[5])
+        start_val   = int(params[6])
+        from bottango_driver.effectors.step_dir_effector import StepDirEffector
+        effector = StepDirEffector(step_pin, dir_pin, cw_is_low,
+                                   max_ccw, max_cw, max_speed, start_val)
+        self.core.effector_pool.register_effector(effector, "STEP_DIR")
+        return True
+
+    def handle_stepper_sync(self, params):
+        # sycM,identifier,value[,hHASH]
+        # value: "home" | "rst" | "aCW" | "aCC" | <integer steps>
+        if len(params) < 2:
+            return True
+        identifier = params[0]
+        sync_val   = params[1]
+        effector = self.core.effector_pool.get_effector_by_id(identifier)
+        if not effector:
+            return True
+        # Duck-type: only StepDirEffector exposes set_home / set_sync.
+        # Avoids isinstance failures that can occur in MicroPython when the
+        # same module is imported through different path strings.
+        if not hasattr(effector, 'set_home'):
+            return True
+        if sync_val == 'home':
+            effector.set_home()
+        elif sync_val == 'rst':
+            effector.reset_home()
+        elif sync_val in ('aCW', 'aCC'):
+            # Auto-sync requires a hardware limit-switch callback.
+            # Not supported in v1 — silently ignored.
+            pass
+        else:
+            try:
+                effector.set_sync(int(sync_val))
+            except ValueError:
+                pass
         return True
 
     # --- curves ---

@@ -33,8 +33,10 @@ def generate_module_report(config):
 
     # ── Module 2: Command configuration ───────────────────────────────────────
     # maxLen, maxCurves, allowSync, signalBits
+    # allowSync=1 when step/dir steppers are enabled (enables homing UI in Bottango).
     # MicroPython on RP2040/ESP32 uses 32-bit ints → signalBits = 32
-    reports.append("MOD,CMD_CFG,248,8,0,32")
+    allow_sync = 1 if getattr(config, 'ENABLE_STEP_DIR_STEPPERS', False) else 0
+    reports.append("MOD,CMD_CFG,248,8,{},32".format(allow_sync))
 
     # ── Module 3: PCA9685 I2C servo expander ──────────────────────────────────
     # Bottango requires this entry to allow adding I2C servos in the UI.
