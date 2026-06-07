@@ -57,27 +57,15 @@ class AbstractEffector:
         self._min_us_per_signal = (1_000_000 // max_speed) if max_speed > 0 else 0
 
     # ------------------------------------------------------------------
-    # Internal lock helpers
-    # ------------------------------------------------------------------
-
-    def _lock(self):
-        if self._curve_lock is not None:
-            self._curve_lock.acquire()
-
-    def _unlock(self):
-        if self._curve_lock is not None:
-            self._curve_lock.release()
-
-    # ------------------------------------------------------------------
     # Curve management
     # ------------------------------------------------------------------
 
     def add_curve(self, curve):
         """Add a curve to the circular buffer (mirrors AbstractEffector::addCurve)."""
-        self._lock()
+        if self._curve_lock: self._curve_lock.acquire()
         self._curves[self._curve_idx] = curve
         self._curve_idx = (self._curve_idx + 1) % MAX_NUM_CURVES
-        self._unlock()
+        if self._curve_lock: self._curve_lock.release()
 
     def set_curve(self, curve):
         """Alias for add_curve (backwards compat)."""
@@ -85,10 +73,10 @@ class AbstractEffector:
 
     def clear_curves(self):
         """Discard all buffered curves (mirrors clearCurves)."""
-        self._lock()
+        if self._curve_lock: self._curve_lock.acquire()
         for i in range(MAX_NUM_CURVES):
             self._curves[i] = None
-        self._unlock()
+        if self._curve_lock: self._curve_lock.release()
 
     def clear_curve(self):
         """Alias for clear_curves (backwards compat)."""
@@ -111,9 +99,9 @@ class AbstractEffector:
         # Holding the lock only for this brief memcopy keeps the critical
         # section short and avoids stalling add_curve() on core0 while the
         # Bezier solver runs on core1.
-        self._lock()
+        if self._curve_lock: self._curve_lock.acquire()
         curves = self._curves[:]   # 8-element list copy (very fast)
-        self._unlock()
+        if self._curve_lock: self._curve_lock.release()
 
         last_curve    = None
         last_end_time = -1
@@ -173,11 +161,10 @@ class AbstractEffector:
         Map Bottango normalised value (0–8192) → hardware units [min_signal, max_signal].
         Mirrors AbstractEffector::lerpSignal().
         """
-        ratio  = movement_0_8192 / float(BOTTANGO_MAX_SIGNAL)
-        mapped = int(round(self.min_signal + (self.max_signal - self.min_signal) * ratio))
-        lo, hi = (self.min_signal, self.max_signal) if self.max_signal >= self.min_signal \
-                 else (self.max_signal, self.min_signal)
-        return max(lo, min(hi, mapped))
+        mapped = int(round(self.min_signal + (self.max_signal - self.min_signal)
+                           * movement_0_8192 / float(BOTTANGO_MAX_SIGNAL)))
+        return max(min(self.min_signal, self.max_signal),
+                   min(max(self.min_signal, self.max_signal), mapped))
 
     def _speed_limit(self, new_target, now_us):
         """
@@ -190,16 +177,12 @@ class AbstractEffector:
         elapsed_us = time.ticks_diff(now_us, self._last_update_us)
         max_delta  = elapsed_us // self._min_us_per_signal
 
-        delta = new_target - self.current_signal
-        if abs(delta) > max_delta:
-            step   = max_delta if delta > 0 else -max_delta
-            result = self.current_signal + step
-        else:
-            result = new_target
+        delta  = new_target - self.current_signal
+        result = (self.current_signal + (max_delta if delta > 0 else -max_delta)
+                  if abs(delta) > max_delta else new_target)
 
-        lo, hi = (self.min_signal, self.max_signal) if self.max_signal >= self.min_signal \
-                 else (self.max_signal, self.min_signal)
-        return max(lo, min(hi, result))
+        return max(min(self.min_signal, self.max_signal),
+                   min(max(self.min_signal, self.max_signal), result))
 
     def destroy(self):
         """Called when the effector is deregistered."""
