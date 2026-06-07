@@ -50,7 +50,7 @@ class Config:
 
     # Extra features
     ENABLE_STATUS_LIGHTS = True
-    STATUS_PIN           = 2  # Pin used for NeoPixel/WS2812 if enabled
+    STATUS_PIN           = 28  # Pin used for NeoPixel/WS2812 if enabled
     STATUS_NUM_LEDS      = 1  # Number of LEDs in the strip
 
 
