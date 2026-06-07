@@ -55,20 +55,20 @@ Full floating-point Bezier curve evaluation matching Bottango's own curve format
 
 ## Configuration (`main.py`)
 
-| Parameter | Default | Description |
-|---|---|---|
-| `BAUD_RATE` | `115200` | Serial baud rate (must match Bottango) |
-| `TIMEOUT_THRESH_MS` | `0` | Inactivity timeout before auto-deregistering (ms). `0` disables the timeout entirely (recommended). |
-| `MAX_NUM_EFFECTORS` | `16` | Maximum simultaneous effectors |
-| `ENABLE_PIN_SERVOS` | `False` | Enable GPIO PWM servo output |
-| `ENABLE_STEP_DIR_STEPPERS` | `False` | Enable Step/Dir stepper motor support (PIO on RP2040/RP2350, RMT on ESP32) |
-| `ENABLE_I2C_SERVOS` | `False` | Enable PCA9685 I2C servo expander |
-| `REPORT_UID` | `True` | Report unique board ID during handshake |
-| `I2C_ID` | `None` (platform default) | I2C bus index |
-| `I2C_SDA_PIN` / `I2C_SCL_PIN` | `None` (platform default) | Override I2C pins |
-| `I2C_FREQ` | `400000` | I2C clock frequency (Hz) |
-| `ENABLE_STATUS_LIGHTS` | `True` | NeoPixel status LED |
-| `STATUS_PIN` | `2` | GPIO pin for the NeoPixel LED |
+| Parameter | Default | Description                                                                                         |
+|---|--------|-----------------------------------------------------------------------------------------------------|
+| `BAUD_RATE` | `115200` | Serial baud rate (must match Bottango)                                                              |
+| `TIMEOUT_THRESH_MS` | `0`    | Inactivity timeout before auto-deregistering (ms). `0` disables the timeout entirely (recommended). |
+| `MAX_NUM_EFFECTORS` | `16`   | Maximum simultaneous effectors                                                                      |
+| `ENABLE_PIN_SERVOS` | `True` | Enable GPIO PWM servo output                                                                        |
+| `ENABLE_STEP_DIR_STEPPERS` | `True` | Enable Step/Dir stepper motor support (PIO on RP2040/RP2350, RMT on ESP32)                          |
+| `ENABLE_I2C_SERVOS` | `True` | Enable PCA9685 I2C servo expander                                                                   |
+| `REPORT_UID` | `True` | Report unique board ID during handshake                                                             |
+| `I2C_ID` | `None` | I2C bus index, defaults to detected board's bus. See boards_def.py                                  |
+| `I2C_SDA_PIN` / `I2C_SCL_PIN` | `None` | Override I2C pins, defaults to detected board's pins. See boards_def.py.                            |
+| `I2C_FREQ` | `400000` | I2C clock frequency (Hz)                                                                            |
+| `ENABLE_STATUS_LIGHTS` | `True` | NeoPixel status LED                                                                                 |
+| `STATUS_PIN` | `28`   | GPIO pin for the NeoPixel LED. Default is GP28, the onboard WS2812 on the Cytron Maker Pi Pico. Change this if your board places the NeoPixel on a different pin, or set `ENABLE_STATUS_LIGHTS = False` if your board has no onboard NeoPixel. |
 
 ### Platform default I2C pins
 
