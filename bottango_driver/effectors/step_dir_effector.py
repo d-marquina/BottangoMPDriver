@@ -247,6 +247,19 @@ class StepDirEffector(AbstractEffector):
         next_click_ms = current_time_ms + VELOCITY_SEGMENT_MS
         last_curve    = None
 
+        # Pre-compute speed-limit constants (mirrors Arduino minMicrosPerSignal clamp).
+        # _min_us_per_signal is the FULL step period (µs); half-period = // 2.
+        # max_steps_seg: maximum steps the motor can physically produce in one
+        # 67 ms window at its configured top speed.  Capping delta to this value
+        # prevents commanding the PIO faster than the motor can move, which would
+        # cause stall / step-loss while the software counter races ahead.
+        if self._min_us_per_signal > 0:
+            _min_half_us   = max(MIN_PULSE_WIDTH_US, self._min_us_per_signal // 2)
+            _max_steps_seg = max(1, (VELOCITY_SEGMENT_MS * 1000) // self._min_us_per_signal)
+        else:
+            _min_half_us   = MIN_PULSE_WIDTH_US
+            _max_steps_seg = 0   # 0 → no cap
+
         for i in range(MAX_NUM_CURVES):
             curve = self._curves[i]
             if curve is None:
@@ -254,18 +267,33 @@ class StepDirEffector(AbstractEffector):
 
             curve_end = curve.start_time + curve.duration
 
-            if curve.start_time <= next_click_ms <= curve_end:
-                movement   = curve.evaluate(next_click_ms)      # 0–8192
-                new_target = self._lerp_signal(movement)         # steps
+            # Use current_time_ms (not next_click_ms) as the active-range gate so
+            # the final segment of a curve is never skipped when next_click_ms
+            # overshoots curve_end.  Evaluate at whichever is earlier.
+            if curve.start_time <= current_time_ms <= curve_end:
+                eval_ms    = next_click_ms if next_click_ms <= curve_end else curve_end
+                movement   = curve.evaluate(eval_ms)      # 0–8192
+                new_target = self._lerp_signal(movement)  # steps
                 delta      = new_target - self.current_signal
 
                 if delta != 0:
                     self.target_signal    = new_target
                     self._in_progress_idx = i
 
-                    # Spread steps evenly over the segment
-                    time_us   = VELOCITY_SEGMENT_MS * 1000
-                    half_us   = max(MIN_PULSE_WIDTH_US, time_us // (abs(delta) * 2))
+                    # ── Speed-limit enforcement (mirrors Arduino clamp) ──────
+                    # Cap to what the motor can physically do in VELOCITY_SEGMENT_MS.
+                    # If capped, current_signal advances by only the achievable
+                    # amount; the next segment re-evaluates from that position
+                    # and keeps driving at max speed until caught up — same as
+                    # Arduino's signalChangePeriodUs = max(computed, minMicrosPerSignal).
+                    if _max_steps_seg and abs(delta) > _max_steps_seg:
+                        sign  = 1 if delta > 0 else -1
+                        delta = _max_steps_seg * sign
+
+                    # Half-period: spread |delta| steps evenly over 67 ms,
+                    # but never faster than the motor's rated top speed.
+                    time_us = VELOCITY_SEGMENT_MS * 1000
+                    half_us = max(_min_half_us, time_us // (abs(delta) * 2))
                     self._issue_burst(delta, half_us, current_time_ms)
                 else:
                     # No movement this segment; mark segment start to avoid
