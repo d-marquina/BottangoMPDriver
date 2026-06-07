@@ -1,13 +1,21 @@
 import time
 
-# Set True to log snap-to-end events (for debugging trajectory issues).
-_DBG_SNAP = False
-
 # Bottango normalises all curve Y values to this range (0 = min, 8192 = max)
 BOTTANGO_MAX_SIGNAL = 8192
 
 # Number of curves to buffer per effector (mirrors Arduino MAX_NUM_CURVES)
 MAX_NUM_CURVES = 8
+
+# Try to import _thread for dual-core curve-buffer locking.
+# On RP2040/RP2350 each core runs its own Python VM in parallel, so a
+# lock is required whenever core0 (protocol handler) writes to _curves
+# while core1 (stepper loop) reads from it.
+try:
+    import _thread as _thr
+    _THREADING = True
+except ImportError:
+    _thr       = None
+    _THREADING = False
 
 
 class AbstractEffector:
@@ -18,6 +26,14 @@ class AbstractEffector:
       - Circular curve buffer (MAX_NUM_CURVES slots)
       - Speed limiting based on maxPWMSec
       - Holds the end value of the last finished curve
+
+    Thread safety
+    -------------
+    add_curve() / clear_curves() are called from core0 (protocol handler).
+    update_on_loop() for StepDirEffectors is called from core1.
+    A per-effector _curve_lock serialises access to the _curves array.
+    Servo effectors keep the lock allocated but it is never contended
+    (both add_curve and update_on_loop run on core0 for servos).
     """
 
     def __init__(self, identifier, min_signal, max_signal, start_val, max_speed):
@@ -31,13 +47,26 @@ class AbstractEffector:
         self.current_signal = start_val
         self.target_signal  = start_val
 
-        # Circular curve buffer
-        self._curves    = [None] * MAX_NUM_CURVES
-        self._curve_idx = 0       # next write slot
+        # Circular curve buffer + per-effector lock
+        self._curves     = [None] * MAX_NUM_CURVES
+        self._curve_idx  = 0       # next write slot
+        self._curve_lock = _thr.allocate_lock() if _THREADING else None
 
         # Speed limiting
         self._last_update_us    = time.ticks_us()
         self._min_us_per_signal = (1_000_000 // max_speed) if max_speed > 0 else 0
+
+    # ------------------------------------------------------------------
+    # Internal lock helpers
+    # ------------------------------------------------------------------
+
+    def _lock(self):
+        if self._curve_lock is not None:
+            self._curve_lock.acquire()
+
+    def _unlock(self):
+        if self._curve_lock is not None:
+            self._curve_lock.release()
 
     # ------------------------------------------------------------------
     # Curve management
@@ -45,8 +74,10 @@ class AbstractEffector:
 
     def add_curve(self, curve):
         """Add a curve to the circular buffer (mirrors AbstractEffector::addCurve)."""
+        self._lock()
         self._curves[self._curve_idx] = curve
         self._curve_idx = (self._curve_idx + 1) % MAX_NUM_CURVES
+        self._unlock()
 
     def set_curve(self, curve):
         """Alias for add_curve (backwards compat)."""
@@ -54,8 +85,10 @@ class AbstractEffector:
 
     def clear_curves(self):
         """Discard all buffered curves (mirrors clearCurves)."""
+        self._lock()
         for i in range(MAX_NUM_CURVES):
             self._curves[i] = None
+        self._unlock()
 
     def clear_curve(self):
         """Alias for clear_curves (backwards compat)."""
@@ -74,11 +107,19 @@ class AbstractEffector:
           PinServoEffector::driveOnLoop()      ← hardware write
         Both are called every loop cycle regardless of curve state.
         """
+        # Take a lock-protected snapshot of the curve references.
+        # Holding the lock only for this brief memcopy keeps the critical
+        # section short and avoids stalling add_curve() on core0 while the
+        # Bezier solver runs on core1.
+        self._lock()
+        curves = self._curves[:]   # 8-element list copy (very fast)
+        self._unlock()
+
         last_curve    = None
         last_end_time = -1
         found_active  = False
 
-        for curve in self._curves:
+        for curve in curves:
             if curve is None:
                 continue
 
@@ -109,10 +150,6 @@ class AbstractEffector:
         # No active curve → snap to the end position of the most recently finished one
         if not found_active and last_curve is not None and last_end_time < current_time_ms:
             end_target = self._lerp_signal(last_curve.end_val)
-            if _DBG_SNAP and self.target_signal != end_target:
-                from bottango_driver.outgoing import Outgoing
-                Outgoing.send_log("SNAP id={} cur={} lc_end={} tgt->{}".format(
-                    self.identifier, current_time_ms, last_end_time, end_target))
             if self.target_signal != end_target:
                 now_us  = time.ticks_us()
                 limited = self._speed_limit(end_target, now_us)
