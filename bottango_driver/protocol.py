@@ -119,6 +119,8 @@ class ProtocolHandler:
 
     def handle_register_pin_servo(self, params):
         # rSVPin,pinId,minPWM,maxPWM,maxPWMSec,startPWM[,hHASH]
+        if not getattr(self.config, 'ENABLE_PIN_SERVOS', False):
+            return True
         if len(params) < 5:
             return True
         pin_num   = int(params[0])
