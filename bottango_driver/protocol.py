@@ -3,10 +3,6 @@ from bottango_driver.modules import generate_module_report
 from bottango_driver.curves.bezier import BezierCurve
 from bottango_driver.callbacks import on_bottango_connected
 
-# Set True to log tSYN and sC timing to Bottango's console (for debugging).
-# Set False for production.
-_DBG_TIMING = False
-
 class ProtocolHandler:
     def __init__(self, core):
         self.core = core
@@ -81,12 +77,7 @@ class ProtocolHandler:
         if len(params) >= 1:
             t = int(params[0])
             self.core.time_sync.sync_time(t)
-            if _DBG_TIMING:
-                import time as _t
-                Outgoing.send_log("tSYN T={} local={} cur={}".format(
-                    t, _t.ticks_ms(),
-                    self.core.time_sync.get_current_time_ms()))
-        return True
+            return True
 
     # --- stop / clear ---
 
@@ -255,11 +246,5 @@ class ProtocolHandler:
             return True
         curve = BezierCurve(start_time, duration, start_val, end_val,
                             cp1x, cp1y, cp2x, cp2y)
-        if _DBG_TIMING:
-            cur = self.core.time_sync.get_current_time_ms()
-            Outgoing.send_log("sC id={} off={} st={} end={} cur={} active={}".format(
-                identifier, start_time_offset, start_time,
-                start_time + duration, cur,
-                1 if (start_time <= cur <= start_time + duration) else 0))
         effector.add_curve(curve)  # queues into circular buffer (up to 8)
         return True

@@ -67,20 +67,12 @@ class AbstractEffector:
         self._curve_idx = (self._curve_idx + 1) % MAX_NUM_CURVES
         if self._curve_lock: self._curve_lock.release()
 
-    def set_curve(self, curve):
-        """Alias for add_curve (backwards compat)."""
-        self.add_curve(curve)
-
     def clear_curves(self):
         """Discard all buffered curves (mirrors clearCurves)."""
         if self._curve_lock: self._curve_lock.acquire()
         for i in range(MAX_NUM_CURVES):
             self._curves[i] = None
         if self._curve_lock: self._curve_lock.release()
-
-    def clear_curve(self):
-        """Alias for clear_curves (backwards compat)."""
-        self.clear_curves()
 
     # ------------------------------------------------------------------
     # Main loop
