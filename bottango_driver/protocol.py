@@ -22,6 +22,7 @@ class ProtocolHandler:
             'xUE':    self.handle_deregister,
             'xC':     self.handle_clear_curves,
             'xUC':    self.handle_clear_effector_curves,
+            'upE':    self.handle_update_bounds,
             'sC':     self.handle_set_curve,
             'sSY':    self.handle_set_sync_curves,
             'sycM':   self.handle_stepper_sync,
@@ -115,6 +116,29 @@ class ProtocolHandler:
     def handle_deregister(self, params):
         if len(params) >= 1:
             self.core.effector_pool.deregister_effector(params[0])
+        return True
+
+    def handle_update_bounds(self, params):
+        # upE,identifier,minSignal,maxSignal,maxSignalSec[,hHASH]
+        #
+        # Live update of an effector's signal bounds (Bottango "Update Signal
+        # Bounds"), mirrors Arduino BasicCommands::updateEffectorSignalBounds ->
+        # EffectorPool::updateEffectorSignalBounds -> Effector::updateSignalBounds.
+        #
+        # Scoped strictly to the single effector named by identifier — never
+        # touches the rest of the pool.  Works identically for servos and
+        # steppers (Arduino's LoopDrivenEffector and VelocityEffector both just
+        # update min/max and recompute the speed limit; homing is untouched).
+        if len(params) < 4:
+            return True
+        effector = self.core.effector_pool.get_effector_by_id(params[0])
+        if not effector:
+            return True
+        effector.min_signal = int(params[1])
+        effector.max_signal = int(params[2])
+        speed = int(params[3])
+        # Same formula as AbstractEffector.__init__ (1_000_000 / maxSpeed).
+        effector._min_us_per_signal = (1_000_000 // speed) if speed > 0 else 0
         return True
 
     def handle_register_pin_servo(self, params):
