@@ -1,3 +1,7 @@
 /.idea/
 /.claude/
 /.others/
+
+# Python bytecode
+__pycache__/
+*.pyc
